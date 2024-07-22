@@ -3,16 +3,33 @@ package main
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
 
+var allowedOrigins = []string{"*"}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for simplicity
+		origin := r.Header.Get("Origin")
+		return isOriginAllowed(allowedOrigins, origin)
 	},
+}
+
+func isOriginAllowed(allowedOrigins []string, origin string) bool {
+	for _, o := range allowedOrigins {
+		// If wild-card appears at least once, all origins will be allowed
+		if o == "*" {
+			return true
+		}
+		if strings.EqualFold(o, origin) {
+			return true
+		}
+	}
+	return false
 }
 
 func proxyHandler(c echo.Context) error {
@@ -34,7 +51,7 @@ func proxyHandler(c echo.Context) error {
 	defer targetConn.Close()
 
 	// Channel to signal the closure of the connections
-	done := make(chan struct{})
+	done := make(chan bool)
 
 	// Forward messages from client to target server
 	go func() {
@@ -50,7 +67,7 @@ func proxyHandler(c echo.Context) error {
 				break
 			}
 		}
-		done <- struct{}{}
+		done <- true
 	}()
 
 	// Forward messages from target server to client
@@ -67,7 +84,7 @@ func proxyHandler(c echo.Context) error {
 				break
 			}
 		}
-		done <- struct{}{}
+		done <- true
 	}()
 
 	// Wait for either connection to close
